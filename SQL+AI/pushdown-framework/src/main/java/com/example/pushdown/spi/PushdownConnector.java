@@ -1,11 +1,15 @@
 package com.example.pushdown.spi;
 
+import com.example.pushdown.aggregate.AggregateResult;
+import com.example.pushdown.deparse.SortItem;
 import com.example.pushdown.expression.ConnectorExpression;
+import com.example.pushdown.expression.FunctionSignature;
 import com.example.pushdown.handle.ColumnHandle;
 import com.example.pushdown.handle.TableHandle;
 import com.example.pushdown.result.FilterResult;
 import com.example.pushdown.session.ConnectorSession;
 import com.example.pushdown.session.SnapshotContext;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -38,4 +42,78 @@ public interface PushdownConnector {
     }
 
     default boolean supportsFallback() { return true; }
+
+    // ====== Aggregate pushdown ======
+
+    /**
+     * Whether the source can push down the given aggregate functions over the
+     * supplied grouping keys with the supplied HAVING predicate.
+     *
+     * <p>Default: {@code false} — aggregate pushdown is opt-in.
+     *
+     * @param aggregates   aggregate functions the engine wants to push
+     * @param groupingKeys GROUP BY columns (may be empty for global aggregates)
+     * @param having       HAVING predicate (use {@code TRUE} when none)
+     */
+    default boolean isAggregatePushable(ConnectorSession session, TableHandle table,
+                                         List<FunctionSignature> aggregates,
+                                         List<ColumnHandle> groupingKeys,
+                                         ConnectorExpression having) {
+        return false;
+    }
+
+    /**
+     * Push the aggregate down to the source. Returns an {@link AggregateResult}
+     * describing the pushed plan and any residual HAVING / aggregates the
+     * engine must still evaluate, or {@code Optional.empty()} when the push
+     * cannot be performed.
+     */
+    default Optional<AggregateResult> applyAggregate(
+            ConnectorSession session, TableHandle table,
+            List<FunctionSignature> aggregates,
+            List<ColumnHandle> groupingKeys,
+            ConnectorExpression having) {
+        return Optional.empty();
+    }
+
+    // ====== Join pushdown ======
+    //
+    // Placeholder signatures — a proper JoinType enum and JoinResult
+    // interface will be added in Task 41. Object is used meanwhile so the
+    // SPI declares the surface area without coupling to a not-yet-defined
+    // type.
+
+    default boolean isJoinPushable(ConnectorSession session, Object joinType,
+                                    TableHandle left, TableHandle right,
+                                    ConnectorExpression condition) {
+        return false;
+    }
+
+    default Optional<Object> applyJoin(ConnectorSession session, Object joinType,
+                                        TableHandle left, TableHandle right,
+                                        ConnectorExpression condition) {
+        return Optional.empty();
+    }
+
+    // ====== TopN pushdown ======
+
+    default boolean isTopNPushable(ConnectorSession session, TableHandle table,
+                                    long limit, List<SortItem> orderBy) {
+        return false;
+    }
+
+    default Optional<Object> applyTopN(ConnectorSession session, TableHandle table,
+                                        long limit, List<SortItem> orderBy) {
+        return Optional.empty();
+    }
+
+    // ====== Limit pushdown ======
+
+    default boolean isLimitPushable(ConnectorSession session, TableHandle table, long limit) {
+        return false;
+    }
+
+    default Optional<Object> applyLimit(ConnectorSession session, TableHandle table, long limit) {
+        return Optional.empty();
+    }
 }
