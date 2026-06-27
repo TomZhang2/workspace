@@ -5,6 +5,7 @@ import com.example.pushdown.aggregate.AggregateResult;
 import com.example.pushdown.aggregate.IntermediateAggregate;
 import com.example.pushdown.aggregate.MergeFunction;
 import com.example.pushdown.aggregate.MergeFunctions;
+import com.example.pushdown.deparse.SortItem;
 import com.example.pushdown.expression.ConnectorExpression;
 import com.example.pushdown.expression.Expressions;
 import com.example.pushdown.expression.FunctionSignature;
@@ -23,6 +24,9 @@ import com.example.pushdown.shippability.StableFunctionPinner;
 import com.example.pushdown.spi.ConnectorCapability;
 import com.example.pushdown.spi.ConnectorVersion;
 import com.example.pushdown.spi.PushdownConnector;
+import com.example.pushdown.topn.Collation;
+import com.example.pushdown.topn.LimitResult;
+import com.example.pushdown.topn.TopNResult;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -65,6 +69,14 @@ public class JdbcConnector implements PushdownConnector {
     private final ShippabilityChecker shippabilityChecker = new ShippabilityChecker();
     private final ShippabilityRegistry shippabilityRegistry = new ShippabilityRegistry();
     private final StableFunctionPinner stablePinner = new StableFunctionPinner();
+
+    /**
+     * The collation MySQL uses for {@code VARCHAR} columns under the default
+     * {@code utf8mb4_general_ci} server collation. Returned in
+     * {@link TopNResult#sortCollation()} so callers can decide whether the
+     * pushed ordering is trustworthy for their comparison semantics.
+     */
+    private static final Collation DEFAULT_MYSQL_COLLATION = Collation.of("utf8mb4_general_ci");
 
     public JdbcConnector(String serverId) {
         this.serverId = serverId;
@@ -228,6 +240,53 @@ public class JdbcConnector implements PushdownConnector {
             return residual.get(0);
         }
         return Expressions.logicalAnd(residual.toArray(new ConnectorExpression[0]));
+    }
+
+    // ====== TopN / Limit pushdown ======
+    //
+    // MySQL supports ORDER BY + LIMIT natively, so TopN pushdown is always
+    // available. The source guarantees both the row ordering and the limit
+    // (it never returns more rows than requested). The ordering is reported
+    // under the default MySQL collation (utf8mb4_general_ci); callers that
+    // need a stricter collation (e.g. binary/C) must not trust the order.
+    //
+    // Plain LIMIT without ORDER BY is also pushable; MySQL guarantees the
+    // bound but not which rows it returns.
+
+    @Override
+    public boolean isTopNPushable(ConnectorSession session, TableHandle table,
+                                    long limit, List<SortItem> orderBy) {
+        // MySQL supports ORDER BY + LIMIT for any positive limit. We require
+        // at least one sort item — without ordering, this is a plain LIMIT
+        // and should go through applyLimit instead.
+        return limit > 0 && orderBy != null && !orderBy.isEmpty();
+    }
+
+    @Override
+    public Optional<TopNResult> applyTopN(ConnectorSession session, TableHandle table,
+                                            long limit, List<SortItem> orderBy) {
+        if (!isTopNPushable(session, table, limit, orderBy)) {
+            return Optional.empty();
+        }
+        return Optional.of(TopNResult.of(
+            table,
+            true, // orderGuaranteed — MySQL honors ORDER BY
+            true, // limitGuaranteed — MySQL honors LIMIT
+            Optional.of(DEFAULT_MYSQL_COLLATION)
+        ));
+    }
+
+    @Override
+    public boolean isLimitPushable(ConnectorSession session, TableHandle table, long limit) {
+        return limit > 0;
+    }
+
+    @Override
+    public Optional<LimitResult> applyLimit(ConnectorSession session, TableHandle table, long limit) {
+        if (!isLimitPushable(session, table, limit)) {
+            return Optional.empty();
+        }
+        return Optional.of(LimitResult.of(table, true));
     }
 
     @Override
