@@ -11,6 +11,8 @@ import com.example.pushdown.join.JoinType;
 import com.example.pushdown.result.FilterResult;
 import com.example.pushdown.session.ConnectorSession;
 import com.example.pushdown.session.SnapshotContext;
+import com.example.pushdown.topn.LimitResult;
+import com.example.pushdown.topn.TopNResult;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -100,24 +102,33 @@ public interface PushdownConnector {
     }
 
     // ====== TopN pushdown ======
+    //
+    // The connector returns a TopNResult that records whether the source
+    // guarantees the row ordering and the limit, plus the collation under
+    // which the ordering is trustworthy. Callers consult
+    // TopNResult#isOrderTrustworthy(Collation) before relying on the order.
 
     default boolean isTopNPushable(ConnectorSession session, TableHandle table,
                                     long limit, List<SortItem> orderBy) {
         return false;
     }
 
-    default Optional<Object> applyTopN(ConnectorSession session, TableHandle table,
-                                        long limit, List<SortItem> orderBy) {
+    default Optional<TopNResult> applyTopN(ConnectorSession session, TableHandle table,
+                                            long limit, List<SortItem> orderBy) {
         return Optional.empty();
     }
 
     // ====== Limit pushdown ======
+    //
+    // Plain LIMIT without ORDER BY. The connector reports whether the source
+    // guarantees the limit (some sources reserve the right to return fewer
+    // rows; the engine must not assume a tight bound unless guaranteed).
 
     default boolean isLimitPushable(ConnectorSession session, TableHandle table, long limit) {
         return false;
     }
 
-    default Optional<Object> applyLimit(ConnectorSession session, TableHandle table, long limit) {
+    default Optional<LimitResult> applyLimit(ConnectorSession session, TableHandle table, long limit) {
         return Optional.empty();
     }
 }
