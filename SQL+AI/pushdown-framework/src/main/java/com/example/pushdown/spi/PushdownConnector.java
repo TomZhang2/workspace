@@ -6,6 +6,8 @@ import com.example.pushdown.expression.ConnectorExpression;
 import com.example.pushdown.expression.FunctionSignature;
 import com.example.pushdown.handle.ColumnHandle;
 import com.example.pushdown.handle.TableHandle;
+import com.example.pushdown.join.JoinResult;
+import com.example.pushdown.join.JoinType;
 import com.example.pushdown.result.FilterResult;
 import com.example.pushdown.session.ConnectorSession;
 import com.example.pushdown.session.SnapshotContext;
@@ -78,20 +80,22 @@ public interface PushdownConnector {
 
     // ====== Join pushdown ======
     //
-    // Placeholder signatures — a proper JoinType enum and JoinResult
-    // interface will be added in Task 41. Object is used meanwhile so the
-    // SPI declares the surface area without coupling to a not-yet-defined
-    // type.
+    // Typed using JoinType and JoinResult. The connector decides whether the
+    // join can be pushed wholesale (FULL_PUSH — both sides live on the same
+    // source) or whether each side should be filtered independently before the
+    // engine performs the join (FILTER_EACH_SIDE). Other cross-source
+    // strategies (BROADCAST_IN_LIST, SEMI_JOIN) are described by
+    // CrossSourceStrategy on the returned JoinResult.
 
-    default boolean isJoinPushable(ConnectorSession session, Object joinType,
+    default boolean isJoinPushable(ConnectorSession session, JoinType joinType,
                                     TableHandle left, TableHandle right,
                                     ConnectorExpression condition) {
         return false;
     }
 
-    default Optional<Object> applyJoin(ConnectorSession session, Object joinType,
-                                        TableHandle left, TableHandle right,
-                                        ConnectorExpression condition) {
+    default Optional<JoinResult> applyJoin(ConnectorSession session, JoinType joinType,
+                                            TableHandle left, TableHandle right,
+                                            ConnectorExpression condition) {
         return Optional.empty();
     }
 
